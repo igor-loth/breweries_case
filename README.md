@@ -1,6 +1,6 @@
 # breweries case(Data Pipeline)
 
-### Introdução
+## Introdução
 O objetivo desse projeto é criar um pipeline consumindo dados de um API e armazenando em um ambiente Data Lake seguindo a arquitetura Medallion com três camadas:
 - **Bronze 🟤:** Dados Brutos.
 - **Silver ⚪:** Dados selecionados e particionado por localização.
@@ -14,3 +14,26 @@ O objetivo desse projeto é criar um pipeline consumindo dados de um API e armaz
 - **Docker** - Conteinerização do nosso ambiente, configurado em um *docker-compose.yml*.
 
 ## Arquitetura
+![GET](image/arquitetura.png)
+
+## Pré Work
+Caso queira ver o Pipeline funcionando, antes de clonar o repositório, tem alguns requisitos necessário: 
+- Instalar Docker (Estou utilizando no linux).
+- Instalar Python (Python 3.10.12 or more).
+- Criar um arquivo *.env* para incluir as chaves de acesso do MinIO:
+  ```bash
+      # Definir o nome do usuário e senha que precisa conectar no serviço Web
+      MINIO_ACCESS_KEY='<USER>'
+      MINIO_SECRET_KEY='<SENHA>'
+  ```
+- Subir o ambiente:
+  ```bash
+      # Construir as imagens 
+      docker-compose build
+
+      # Subir o ambiente
+      docker-compose up -d
+  ```
+
+## Extração
+Para a extração, foi criado um script python [extract_breweries_data.py](data/data_loaders/extract_breweries_data.py) que consulta os dados da API 
