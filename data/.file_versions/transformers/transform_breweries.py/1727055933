@@ -1,0 +1,105 @@
+import os
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+import boto3
+from botocore.client import Config
+from datetime import datetime
+from logger_config import setup_logger
+
+# Configura o logger
+logger = setup_logger('transform_breweries')
+
+# Definir configurações do MinIO
+MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT', 'localhost:9000')
+MINIO_ACCESS_KEY = os.getenv('MINIO_ACCESS_KEY', 'myaccesskey')
+MINIO_SECRET_KEY = os.getenv('MINIO_SECRET_KEY', 'mysecretkey123')
+MINIO_BUCKET = 'silver'  # Bucket onde os dados transformados serão salvos
+
+# Conectar ao MinIO usando boto3 (compatível com S3)
+s3 = boto3.client(
+    's3',
+    endpoint_url=f'http://{MINIO_ENDPOINT}',
+    aws_access_key_id=MINIO_ACCESS_KEY,
+    aws_secret_access_key=MINIO_SECRET_KEY,
+    config=Config(signature_version='s3v4'),
+    region_name='us-east-1'  # Defina a região desejada
+)
+
+# Verificar se o bucket Silver existe e criar se não existir
+def ensure_bucket_exists(bucket_name):
+    try:
+        s3.head_bucket(Bucket=bucket_name)
+        print(f"Bucket '{bucket_name}' já existe.")
+    except:
+        print(f"Bucket '{bucket_name}' não encontrado. Criando o bucket...")
+        s3.create_bucket(Bucket=bucket_name)
+
+ensure_bucket_exists(MINIO_BUCKET)
+
+if 'transformer' not in globals():
+    from mage_ai.data_preparation.decorators import transformer
+
+@transformer
+def transform_data(*args, **kwargs):  # Adiciona parâmetros variáveis
+    try:
+        logger.info("Iniciando o processo de transformação.")
+
+        # Caminho dos dados brutos no MinIO (camada Bronze)
+        raw_data_key = 'data/breweries/breweries_raw.json'
+        
+        # Baixar dados brutos do MinIO
+        obj = s3.get_object(Bucket='bronze', Key=raw_data_key)
+        df = pd.read_json(obj['Body'])
+
+        # Verificar se a coluna 'state' existe
+        if 'state' not in df.columns:
+            logger.error("A coluna 'state' não existe nos dados brutos.")
+            raise ValueError("A coluna 'state' não existe nos dados brutos.")
+
+        # Salvar dados como Parquet, particionando por 'state' no MinIO (camada Silver)
+        for state, group in df.groupby('state'):
+            state_adjusted = state.replace(" ", "_")
+            parquet_file_name = f'breweries_{state_adjusted}.parquet'
+            table = pa.Table.from_pandas(group)
+
+            # Salvar no MinIO
+            parquet_buffer = io.BytesIO()
+            pq.write_table(table, parquet_buffer)
+            parquet_buffer.seek(0)
+
+            s3.put_object(
+                Bucket=MINIO_BUCKET,
+                Key=f'data/breweries/{state_adjusted}/{parquet_file_name}',  # Diretório e nome do arquivo
+                Body=parquet_buffer.getvalue(),
+                ContentType='application/octet-stream'
+            )
+
+            logger.info(f'Dados salvos em: {MINIO_BUCKET}/data/breweries/{state_adjusted}/{parquet_file_name}')
+
+    except FileNotFoundError as e:
+        log_error(f"Erro de arquivo: {e}")
+    except ValueError as e:
+        log_error(f"Erro de valor: {e}")
+    except Exception as e:
+        log_error(f"Erro inesperado: {e}")
+
+def log_error(message):
+    logger.error(message)
+
+    # Nome do arquivo de log
+    log_file_name = f'log_{datetime.now().strftime("%Y%m%d%H%M%S")}.txt'
+    log_message = f'{datetime.now()}: {message}\n'
+    
+    # Salvar o log de erro no MinIO na camada Silver (pasta logs)
+    s3.put_object(
+        Bucket=MINIO_BUCKET,
+        Key=f'logs/{log_file_name}',
+        Body=log_message,
+        ContentType='text/plain'
+    )
+
+    print(f'Log de erro salvo no MinIO em: {MINIO_BUCKET}/logs/{log_file_name}')
+
+if __name__ == "__main__":
+    transform_data()

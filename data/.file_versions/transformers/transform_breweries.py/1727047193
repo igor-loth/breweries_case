@@ -1,0 +1,57 @@
+import os
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+from logger_config import setup_logger
+
+# Configura o logger
+logger = setup_logger('transform_breweries')
+
+if 'transformer' not in globals():
+    from mage_ai.data_preparation.decorators import transformer
+
+@transformer
+def transform_data(*args, **kwargs):  # Adiciona parâmetros variáveis
+    try:
+        logger.info("Iniciando o processo de transformação.")  # Ajustado para INFO
+
+        # Caminho dos dados brutos
+        raw_data_dir = './data/bronze/breweries'
+        if not os.path.exists(raw_data_dir):
+            logger.error(f"Diretório {raw_data_dir} não encontrado.")
+            raise FileNotFoundError(f"Diretório {raw_data_dir} não encontrado.")
+
+        # Carregar dados brutos (ajustar para carregar o arquivo correto)
+        raw_data_files = [f for f in os.listdir(raw_data_dir) if f.endswith('.json')]
+        if not raw_data_files:
+            logger.error("Nenhum arquivo JSON encontrado no diretório de dados brutos.")
+            raise FileNotFoundError("Nenhum arquivo JSON encontrado no diretório de dados brutos.")
+
+        raw_data_path = os.path.join(raw_data_dir, raw_data_files[0])
+        df = pd.read_json(raw_data_path)
+
+        # Verificar se a coluna 'state' existe
+        if 'state' not in df.columns:
+            logger.error("A coluna 'state' não existe nos dados brutos.")
+            raise ValueError("A coluna 'state' não existe nos dados brutos.")
+
+        # Criar diretório para dados Silver
+        silver_data_dir = './data/silver/breweries/'
+        os.makedirs(silver_data_dir, exist_ok=True)
+
+        # Salvar dados como Parquet, particionando por 'state'
+        for state, group in df.groupby('state'):
+            state_adjusted = state.replace(" ", "_")
+            state_file_path = os.path.join(silver_data_dir, state_adjusted, f'breweries_{state_adjusted}.parquet')
+            os.makedirs(os.path.dirname(state_file_path), exist_ok=True)
+            table = pa.Table.from_pandas(group)
+            pq.write_table(table, state_file_path)
+
+            logger.info(f'Dados salvos em: {state_file_path}')  # Ajustado para INFO
+    
+    except FileNotFoundError as e:
+        logger.error(f"Erro de arquivo: {e}")
+    except ValueError as e:
+        logger.error(f"Erro de valor: {e}")
+    except Exception as e:
+        logger.error(f"Erro inesperado: {e}")

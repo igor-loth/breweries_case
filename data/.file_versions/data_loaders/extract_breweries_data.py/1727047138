@@ -1,0 +1,38 @@
+import io
+import requests
+import json
+import os
+if 'data_loader' not in globals():
+    from mage_ai.data_preparation.decorators import data_loader
+
+
+
+@data_loader
+def extract_data():
+    # Endpoint da API
+    url = 'https://api.openbrewerydb.org/breweries'
+
+    # Requisição para a API
+    response = requests.get(url)
+    
+    if response.status_code == 200:
+        breweries_data = response.json()  # Parse dos dados recebidos
+        
+        # Definir diretório de saída para os dados brutos (Bronze)
+        data_lake_dir = './data/bronze/breweries/'
+        os.makedirs(data_lake_dir, exist_ok=True)  # Certifique que o diretório existe
+        
+        # Nome fixo do arquivo para os dados brutos
+        file_name = 'breweries_raw.json'
+        file_path = os.path.join(data_lake_dir, file_name)
+        
+        # Salvar os dados brutos no formato JSON
+        with open(file_path, 'w') as json_file:
+            json.dump(breweries_data, json_file, indent=4)
+        
+        print(f'Dados salvos com sucesso em: {file_path}')
+    else:
+        print(f'Erro ao acessar a API: {response.status_code}')
+
+if __name__ == "__main__":
+    extract_data()

@@ -1,0 +1,91 @@
+blocks:
+- all_upstream_blocks_executed: true
+  color: null
+  configuration: {}
+  downstream_blocks:
+  - transform_breweries
+  executor_config: null
+  executor_type: local_python
+  has_callback: false
+  language: python
+  name: extract_breweries_data
+  retry_config: null
+  status: executed
+  timeout: null
+  type: data_loader
+  upstream_blocks: []
+  uuid: extract_breweries_data
+- all_upstream_blocks_executed: true
+  color: null
+  configuration: {}
+  downstream_blocks:
+  - aggregated_columns
+  executor_config: null
+  executor_type: local_python
+  has_callback: false
+  language: python
+  name: transform_breweries
+  retry_config: null
+  status: updated
+  timeout: null
+  type: transformer
+  upstream_blocks:
+  - extract_breweries_data
+  uuid: transform_breweries
+- all_upstream_blocks_executed: false
+  color: null
+  configuration: {}
+  downstream_blocks:
+  - data_viz
+  executor_config: null
+  executor_type: local_python
+  has_callback: false
+  language: python
+  name: aggregated_columns
+  retry_config: null
+  status: updated
+  timeout: null
+  type: transformer
+  upstream_blocks:
+  - transform_breweries
+  uuid: aggregated_columns
+- all_upstream_blocks_executed: false
+  color: null
+  configuration: {}
+  downstream_blocks: []
+  executor_config: null
+  executor_type: local_python
+  has_callback: false
+  language: python
+  name: data_viz
+  retry_config: null
+  status: updated
+  timeout: null
+  type: data_exporter
+  upstream_blocks:
+  - aggregated_columns
+  uuid: data_viz
+cache_block_output_in_memory: false
+callbacks: []
+concurrency_config: {}
+conditionals: []
+created_at: '2024-09-22 23:14:54.957800+00:00'
+data_integration: null
+description: null
+executor_config: {}
+executor_count: 1
+executor_type: null
+extensions: {}
+name: AB_InBev
+notification_config: {}
+remote_variables_dir: null
+retry_config: {}
+run_pipeline_in_one_process: false
+settings:
+  triggers: null
+spark_config: {}
+tags: []
+type: python
+uuid: ab_inbev
+variables_dir: /home/src/mage_data/data
+widgets: []

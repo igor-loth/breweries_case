@@ -1,0 +1,108 @@
+import os
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import boto3
+from botocore.client import Config
+from datetime import datetime
+import pytz  # Importar pytz
+from io import BytesIO  # Para leitura de dados do MinIO
+
+# Definir configurações do MinIO
+MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT', 'localhost:9000')
+MINIO_ACCESS_KEY = os.getenv('MINIO_ACCESS_KEY', 'myaccesskey')
+MINIO_SECRET_KEY = os.getenv('MINIO_SECRET_KEY', 'mysecretkey123')
+MINIO_BUCKET_GOLD = 'gold'  # Bucket onde os dados Gold estão
+
+if 'data_exporter' not in globals():
+    from mage_ai.data_preparation.decorators import data_exporter
+
+@data_exporter
+# Função para carregar os dados da camada Gold e gerar o gráfico
+def generate_visualization(data, *args, **kwargs):
+    # Conectar ao MinIO usando boto3 (compatível com S3)
+    s3 = boto3.client(
+        's3',
+        endpoint_url=f'http://{MINIO_ENDPOINT}',
+        aws_access_key_id=MINIO_ACCESS_KEY,
+        aws_secret_access_key=MINIO_SECRET_KEY,
+        config=Config(signature_version='s3v4'),
+        region_name='us-east-1'  # Defina a região desejada
+    )
+
+    try:
+        print("Iniciando a geração da visualização.")
+
+        # Caminho dos dados agregados na camada Gold
+        gold_data_key = 'data/state_brewery_type/breweries_aggregated.parquet'
+
+        # Tentar carregar os dados agregados da camada Gold
+        response = s3.get_object(Bucket=MINIO_BUCKET_GOLD, Key=gold_data_key)
+        df = pd.read_parquet(BytesIO(response['Body'].read()))
+        print(f"Dados carregados com sucesso a partir do bucket {MINIO_BUCKET_GOLD}.")
+
+        # Verificar se os dados estão presentes
+        if df.empty:
+            raise ValueError("Os dados agregados estão vazios.")
+
+        # Configuração do estilo do gráfico
+        sns.set_theme(style="whitegrid")
+
+        # Criar um gráfico de barras empilhadas com seaborn
+        plt.figure(figsize=(12, 8))
+
+        # Gerar gráfico de barras empilhadas
+        chart = sns.barplot(
+            data=df,
+            x='state',
+            y='brewery_count',
+            hue='brewery_type',
+            errorbar=None
+        )
+
+        # Definir título e rótulos
+        chart.set_title("Quantidade de Cervejarias por Tipo e Localização", fontsize=16)
+        chart.set_xlabel("Localização (Estado)", fontsize=12)
+        chart.set_ylabel("Quantidade de Cervejarias", fontsize=12)
+
+        # Girar os rótulos do eixo x para melhor visualização
+        plt.xticks(rotation=45, ha='right')
+
+        # Ajustar a legenda
+        plt.legend(title="Tipo de Cervejaria", bbox_to_anchor=(1.05, 1), loc='upper left')
+
+        # Ajustar layout para evitar corte dos rótulos
+        plt.tight_layout()
+
+        # Caminho para salvar o gráfico gerado
+        output_path = './data/visualizations/breweries_aggregated.png'
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+        # Salvar o gráfico
+        plt.savefig(output_path)
+        print(f'Gráfico salvo com sucesso em: {output_path}')
+        
+        # Exibir o gráfico
+        plt.show()
+
+    except Exception as e:
+        # Ajustar para usar horário de Brasília
+        brasilia_tz = pytz.timezone('America/Sao_Paulo')
+        error_message = f'{datetime.now(brasilia_tz)}: {str(e)}\n'
+        print(f'Ocorreu um erro: {error_message}')
+
+        # Nome do arquivo de log
+        log_file_name = f'log_{datetime.now(brasilia_tz).strftime("%Y-%m-%d_%H:%M:%S")}.txt'
+
+        # Salvar o log de erro no MinIO
+        s3.put_object(
+            Bucket=MINIO_BUCKET_GOLD,
+            Key=f'logs/{log_file_name}',  # Diretório de logs no MinIO
+            Body=error_message,
+            ContentType='text/plain'
+        )
+
+        print(f'Log de erro salvo no MinIO em: {MINIO_BUCKET_GOLD}/logs/{log_file_name}')
+
+if __name__ == "__main__":
+    generate_visualization()
