@@ -1,0 +1,82 @@
+import io
+import requests
+import json
+import os
+import boto3
+from botocore.client import Config
+from datetime import datetime
+
+# Definir configurações do MinIO
+MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT', 'localhost:9000')
+MINIO_ACCESS_KEY = os.getenv('MINIO_ACCESS_KEY', 'myaccesskey')
+MINIO_SECRET_KEY = os.getenv('MINIO_SECRET_KEY', 'mysecretkey123')
+MINIO_BUCKET = 'bronze'  # Bucket onde os dados serão salvos
+
+if 'data_loader' not in globals():
+    from mage_ai.data_preparation.decorators import data_loader
+
+@data_loader
+def extract_data():
+    # Conectar ao MinIO usando boto3 (compatível com S3)
+    s3 = boto3.client(
+        's3',
+        endpoint_url=f'http://{MINIO_ENDPOINT}',
+        aws_access_key_id=MINIO_ACCESS_KEY,
+        aws_secret_access_key=MINIO_SECRET_KEY,
+        config=Config(signature_version='s3v4'),
+        region_name='us-east-1'  # Defina a região desejada
+    )
+    
+    # Verificar se o bucket existe e criar se não existir
+    try:
+        s3.head_bucket(Bucket=MINIO_BUCKET)
+        print(f"Bucket '{MINIO_BUCKET}' já existe.")
+    except:
+        print(f"Bucket '{MINIO_BUCKET}' não encontrado. Criando o bucket...")
+        s3.create_bucket(Bucket=MINIO_BUCKET)
+
+    try:
+        # Endpoint da API
+        url = 'https://api.openbrewerydb.org/brewer'
+
+        # Requisição para a API
+        response = requests.get(url)
+        
+        if response.status_code == 200:
+            breweries_data = response.json()  # Parse dos dados recebidos
+
+            # Nome do arquivo para os dados brutos
+            file_name = 'breweries_raw.json'
+
+            # Salvar o JSON em um arquivo no MinIO
+            s3.put_object(
+                Bucket=MINIO_BUCKET,
+                Key=f'data/breweries/{file_name}',  # Diretório e nome do arquivo
+                Body=json.dumps(breweries_data, indent=4),
+                ContentType='application/json'
+            )
+
+            print(f'Dados salvos com sucesso no MinIO em: {MINIO_BUCKET}/data/breweries/{file_name}')
+        else:
+            raise Exception(f'Erro ao acessar a API: {response.status_code}')
+
+    except Exception as e:
+        # Registrar erro em logs
+        error_message = f'{datetime.now()}: {str(e)}\n'
+        print(f'Ocorreu um erro: {error_message}')
+
+        # Nome do arquivo de log
+        log_file_name = f'log_{datetime.now().strftime("%Y%m%d%H%M%S")}.txt'
+
+        # Salvar o log de erro no MinIO
+        s3.put_object(
+            Bucket=MINIO_BUCKET,
+            Key=f'logs/{log_file_name}',  # Diretório de logs no MinIO
+            Body=error_message,
+            ContentType='text/plain'
+        )
+
+        print(f'Log de erro salvo no MinIO em: {MINIO_BUCKET}/logs/{log_file_name}')
+
+if __name__ == "__main__":
+    extract_data()

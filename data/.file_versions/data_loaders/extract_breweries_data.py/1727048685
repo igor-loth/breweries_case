@@ -1,0 +1,44 @@
+import io
+import requests
+import json
+import os
+from hdfs import InsecureClient
+
+if 'data_loader' not in globals():
+    from mage_ai.data_preparation.decorators import data_loader
+
+@data_loader
+def extract_data():
+    # Endpoint da API
+    url = 'https://api.openbrewerydb.org/breweries'
+
+    # Requisição para a API
+    response = requests.get(url)
+    
+    if response.status_code == 200:
+        breweries_data = response.json()  # Parse dos dados recebidos
+        
+        # Criar cliente HDFS usando a variável de ambiente
+        namenode_url = os.environ.get('HDFS_NAMENODE', 'hdfs://namenode:9000')
+        client = InsecureClient(namenode_url.replace('hdfs://', 'http://'), user='your_username')  # Substitua 'your_username'
+
+        # Definir caminho de saída no HDFS para os dados brutos (Bronze)
+        data_lake_hdfs_dir = '/data/bronze/breweries/'
+        
+        # Certifique-se que o diretório HDFS existe
+        client.makedirs(data_lake_hdfs_dir)
+
+        # Nome fixo do arquivo para os dados brutos
+        file_name = 'breweries_raw.json'
+        file_path = os.path.join(data_lake_hdfs_dir, file_name)
+        
+        # Salvar os dados brutos no formato JSON no HDFS
+        with client.write(file_path, encoding='utf-8') as json_file:
+            json.dump(breweries_data, json_file, indent=4)
+        
+        print(f'Dados salvos com sucesso em: {file_path}')
+    else:
+        print(f'Erro ao acessar a API: {response.status_code}')
+
+if __name__ == "__main__":
+    extract_data()

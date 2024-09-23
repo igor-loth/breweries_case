@@ -1,0 +1,32 @@
+version: '3'
+services:
+  mage:
+    build: .
+    container_name: mage_pipeline
+    ports:
+      - "6789:6789"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      MAGE_RUN_ENV: 'production'
+      MINIO_ENDPOINT: 'minio:9000'
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY} 
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}  
+    depends_on:
+      - minio
+    command: mage start data
+
+  minio:
+    image: minio/minio
+    container_name: minio
+    ports:
+      - "9000:9000"  
+      - "9001:9001"   
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}   
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY} 
+    command: server --console-address ":9001" /data  
+
+volumes:
+  minio-data:

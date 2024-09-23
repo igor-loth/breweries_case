@@ -1,0 +1,105 @@
+import os
+import json
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+import boto3
+from botocore.client import Config
+from datetime import datetime
+import pytz
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Definir configurações do MinIO
+MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT', 'localhost:9000')
+MINIO_ACCESS_KEY = os.getenv('MINIO_ACCESS_KEY', 'myaccesskey')
+MINIO_SECRET_KEY = os.getenv('MINIO_SECRET_KEY', 'mysecretkey123')
+MINIO_BUCKET_SILVER = 'silver'
+
+if 'transformer' not in globals():
+    from mage_ai.data_preparation.decorators import transformer
+
+@transformer
+def transform_data(*args, **kwargs):
+    # Conectar ao MinIO usando boto3 (compatível com S3)
+    s3 = boto3.client(
+        's3',
+        endpoint_url=f'http://{MINIO_ENDPOINT}',
+        aws_access_key_id=MINIO_ACCESS_KEY,
+        aws_secret_access_key=MINIO_SECRET_KEY,
+        config=Config(signature_version='s3v4'),
+        region_name='us-east-1'  # Defina a região desejada
+    )
+    
+    try:
+        print("Iniciando o processo de transformação.")
+
+        # Caminho dos dados brutos
+        raw_data_dir = './data/bronze/breweries'
+        if not os.path.exists(raw_data_dir):
+            raise FileNotFoundError(f"Diretório {raw_data_dir} não encontrado.")
+
+        # Carregar dados brutos (ajustar para carregar o arquivo correto)
+        raw_data_files = [f for f in os.listdir(raw_data_dir) if f.endswith('.json')]
+        if not raw_data_files:
+            raise FileNotFoundError("Nenhum arquivo JSON encontrado no diretório de dados brutos.")
+
+        raw_data_path = os.path.join(raw_data_dir, raw_data_files[0])
+        df = pd.read_json(raw_data_path)
+
+        # Verificar se a coluna 'state' existe
+        if 'state' not in df.columns:
+            raise ValueError("A coluna 'state' não existe nos dados brutos.")
+
+        # Verificar se o bucket Silver existe e criar se não existir
+        try:
+            s3.head_bucket(Bucket=MINIO_BUCKET_SILVER)
+            print(f"Bucket '{MINIO_BUCKET_SILVER}' já existe.")
+        except:
+            print(f"Bucket '{MINIO_BUCKET_SILVER}' não encontrado. Criando o bucket...")
+            s3.create_bucket(Bucket=MINIO_BUCKET_SILVER)
+
+        # Salvar dados como Parquet, particionando por 'state'
+        for state, group in df.groupby('state'):
+            state_adjusted = state.replace(" ", "_")
+            state_file_path = f'data/breweries/{state_adjusted}/breweries_{state_adjusted}.parquet'
+            table = pa.Table.from_pandas(group)
+
+            # Usar um buffer em bytes
+            buffer = pa.BufferOutputStream()
+            pq.write_table(table, buffer)
+            bytes_data = buffer.getvalue().to_pybytes()  # Converter para bytes
+
+            s3.put_object(
+                Bucket=MINIO_BUCKET_SILVER,
+                Key=state_file_path,  # Diretório e nome do arquivo
+                Body=bytes_data,
+                ContentType='application/octet-stream'
+            )
+
+            print(f'Dados salvos no MinIO em: {MINIO_BUCKET_SILVER}/{state_file_path}')
+
+    except Exception as e:
+        # Registrar erro em logs
+        # Ajustar para usar horário de Brasília
+        brasilia_tz = pytz.timezone('America/Sao_Paulo')
+        error_message = f'{datetime.now(brasilia_tz)}: {str(e)}\n'
+        print(f'Ocorreu um erro: {error_message}')
+
+        # Nome do arquivo de log
+        log_file_name = f'log_{datetime.now(brasilia_tz).strftime("%Y-%m-%d_%H:%M:%S")}.txt'
+
+        # Salvar o log de erro no MinIO
+        s3.put_object(
+            Bucket=MINIO_BUCKET_SILVER,
+            Key=f'logs/{log_file_name}',  # Diretório de logs no MinIO
+            Body=error_message,
+            ContentType='text/plain'
+        )
+
+        print(f'Log de erro salvo no MinIO em: {MINIO_BUCKET_SILVER}/logs/{log_file_name}')
+
+
+if __name__ == "__main__":
+    transform_data()

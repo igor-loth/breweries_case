@@ -1,0 +1,91 @@
+import pandas as pd
+import os
+import sys
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pyarrow.parquet as pq
+
+# Adiciona o caminho para o módulo logger_config
+sys.path.append(os.path.abspath('./data/logs'))
+
+# Agora que o caminho foi adicionado, faça a importação do módulo
+from logger_config import setup_logger
+
+# Configura o logger
+logger = setup_logger('data_export')
+
+if 'data_exporter' not in globals():
+    from mage_ai.data_preparation.decorators import data_exporter
+
+@data_exporter
+# Função para carregar os dados da camada Gold e gerar o gráfico
+def generate_visualization(data, *args, **kwargs):
+    try:
+        logger.info("Iniciando a geração da visualização.")
+
+        # Caminho dos dados agregados na camada Gold
+        gold_data_path = './data/gold/breweries/breweries_aggregated.parquet'
+
+        # Verificar se o arquivo existe
+        if not os.path.exists(gold_data_path):
+            logger.error(f"O arquivo {gold_data_path} não foi encontrado.")
+            raise FileNotFoundError(f"O arquivo {gold_data_path} não foi encontrado.")
+        
+        # Carregar os dados agregados da camada Gold
+        df = pd.read_parquet(gold_data_path)
+        logger.info(f"Dados carregados com sucesso a partir de {gold_data_path}.")
+
+        # Verificar se os dados estão presentes
+        if df.empty:
+            logger.error("Os dados agregados estão vazios.")
+            raise ValueError("Os dados agregados estão vazios.")
+        
+        # Configuração do estilo do gráfico
+        sns.set(style="whitegrid")
+
+        # Criar um gráfico de barras empilhadas com seaborn
+        plt.figure(figsize=(12, 8))
+        
+        # Gerar gráfico de barras empilhadas
+        chart = sns.barplot(
+            data=df,
+            x='state',
+            y='brewery_count',
+            hue='brewery_type',
+            ci=None
+        )
+        
+        # Definir título e rótulos
+        chart.set_title("Quantidade de Cervejarias por Tipo e Localização", fontsize=16)
+        chart.set_xlabel("Localização (Estado)", fontsize=12)
+        chart.set_ylabel("Quantidade de Cervejarias", fontsize=12)
+
+        # Girar os rótulos do eixo x para melhor visualização
+        plt.xticks(rotation=45, ha='right')
+
+        # Ajustar a legenda
+        plt.legend(title="Tipo de Cervejaria", bbox_to_anchor=(1.05, 1), loc='upper left')
+
+        # Ajustar layout para evitar corte dos rótulos
+        plt.tight_layout()
+
+        # Caminho para salvar o gráfico gerado
+        output_path = './data/visualizations/breweries_aggregated.png'
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+        # Salvar o gráfico
+        plt.savefig(output_path)
+        logger.info(f'Gráfico salvo com sucesso em: {output_path}')
+        
+        # Exibir o gráfico
+        plt.show()
+
+    except FileNotFoundError as e:
+        logger.error(f"Erro de arquivo: {e}")
+    except ValueError as e:
+        logger.error(f"Erro de valor: {e}")
+    except Exception as e:
+        logger.error(f"Erro inesperado: {e}")
+
+if __name__ == "__main__":
+    generate_visualization()

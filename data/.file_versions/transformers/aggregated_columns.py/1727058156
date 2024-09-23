@@ -1,0 +1,106 @@
+import os
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+import boto3
+from botocore.client import Config
+from datetime import datetime
+import pytz  # Importar pytz
+
+# Definir configurações do MinIO
+MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT', 'localhost:9000')
+MINIO_ACCESS_KEY = os.getenv('MINIO_ACCESS_KEY', 'myaccesskey')
+MINIO_SECRET_KEY = os.getenv('MINIO_SECRET_KEY', 'mysecretkey123')
+MINIO_BUCKET_GOLD = 'gold'  # Bucket onde os dados Gold serão salvos
+
+if 'transformer' not in globals():
+    from mage_ai.data_preparation.decorators import transformer
+
+@transformer
+def transform_data(*args, **kwargs):
+    # Conectar ao MinIO usando boto3 (compatível com S3)
+    s3 = boto3.client(
+        's3',
+        endpoint_url=f'http://{MINIO_ENDPOINT}',
+        aws_access_key_id=MINIO_ACCESS_KEY,
+        aws_secret_access_key=MINIO_SECRET_KEY,
+        config=Config(signature_version='s3v4'),
+        region_name='us-east-1'  # Defina a região desejada
+    )
+
+    try:
+        # Caminho dos dados da camada Silver
+        silver_data_dir = './data/silver/breweries/'
+        
+        # Verificar se o diretório existe
+        if not os.path.exists(silver_data_dir):
+            raise FileNotFoundError(f"O diretório {silver_data_dir} não foi encontrado.")
+        
+        # Carregar todos os arquivos Parquet da camada Silver
+        dataframes = []
+        for root, dirs, files in os.walk(silver_data_dir):
+            for file in files:
+                if file.endswith('.parquet'):
+                    file_path = os.path.join(root, file)
+                    df = pd.read_parquet(file_path)
+                    dataframes.append(df)
+        
+        # Concatenar todos os dataframes em um único dataframe
+        if len(dataframes) == 0:
+            raise ValueError("Nenhum arquivo Parquet foi encontrado na camada Silver.")
+        
+        df = pd.concat(dataframes)
+
+        # Verificar se as colunas necessárias existem
+        if 'state' not in df.columns or 'brewery_type' not in df.columns:
+            raise ValueError("As colunas 'state' ou 'brewery_type' não foram encontradas nos dados.")
+        
+        # Realizar a agregação para contar o número de cervejarias por tipo e localização (state)
+        aggregated_df = df.groupby(['state', 'brewery_type']).size().reset_index(name='brewery_count')
+
+        # Criar diretório para dados Gold
+        gold_data_dir = './data/gold/breweries/state_brewery_type/'
+        os.makedirs(gold_data_dir, exist_ok=True)
+
+        # Salvar o resultado como Parquet
+        gold_file_path = os.path.join(gold_data_dir, 'breweries_aggregated.parquet')
+        table = pa.Table.from_pandas(aggregated_df)
+        pq.write_table(table, gold_file_path)
+
+        # Salvar os dados agregados no MinIO
+        minio_file_path = 'breweries/aggregated/breweries_aggregated.parquet'
+        buffer = pa.BufferOutputStream()
+        pq.write_table(table, buffer)
+        bytes_data = buffer.getvalue().to_pybytes()  # Converter para bytes
+
+        s3.put_object(
+            Bucket=MINIO_BUCKET_GOLD,
+            Key=minio_file_path,  # Diretório e nome do arquivo
+            Body=bytes_data,
+            ContentType='application/octet-stream'
+        )
+
+        print(f'Dados agregados salvos em: {gold_file_path}')
+        print(f'Dados agregados salvos no MinIO em: {MINIO_BUCKET_GOLD}/{minio_file_path}')
+
+    except Exception as e:
+        # Ajustar para usar horário de Brasília
+        brasilia_tz = pytz.timezone('America/Sao_Paulo')
+        error_message = f'{datetime.now(brasilia_tz)}: {str(e)}\n'
+        print(f'Ocorreu um erro: {error_message}')
+
+        # Nome do arquivo de log
+        log_file_name = f'log_{datetime.now(brasilia_tz).strftime("%Y%m%d%H%M%S")}.txt'
+
+        # Salvar o log de erro no MinIO
+        s3.put_object(
+            Bucket=MINIO_BUCKET_GOLD,
+            Key=f'logs/{log_file_name}',  # Diretório de logs no MinIO
+            Body=error_message,
+            ContentType='text/plain'
+        )
+
+        print(f'Log de erro salvo no MinIO em: {MINIO_BUCKET_GOLD}/logs/{log_file_name}')
+
+if __name__ == "__main__":
+    transform_data()
