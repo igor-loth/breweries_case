@@ -74,15 +74,24 @@ Por fim, o script [aggregated_columns.py](data/transformers/aggregated_columns.p
 
 ![GET](image/visualization.png)
 
-Output do gráfico:
+📊 Output do gráfico 📊:
 
 ![GET](image/grafico.png)
 
 
 ## Logs
-Caso ocorra algum erro no processo, os logs são armazenados também no bucket, mais precisamente na partição ```bronze/logs```. A demais camadas (Silver e Gold) também segue o mesmo padrão.
+Caso ocorra algum erro no processo, os logs são armazenados também no bucket, mais precisamente na partição ```<camada>/logs```. Todas as camadas (Bronze, Silver e Gold) seguem o mesmo padrão.
 
-## Monitoramento e Observabilidade - Próximos Passos
-Caso ocorra algum erro no processo, os logs são armazenados também no bucket, mais precisamente na partição ```bronze/logs```. A demais camadas (Silver e Gold) também segue o mesmo padrão.
+![GET](image/log.png)
+
+![GET](image/exe_log.png)
+
+## Monitoramento e Disponibilidade - Próximos Passos
+Como um upgrade para este pipeline, podemos aproveitar os logs de erro (caso tenha) gerados entre as etapas de extração e tratamento de dados, para criar um ambiente de monitoramento e de disponibilidade dos dados.
+
+Para isso, apresento algumas soluções:
+-  **Zabbix** -  Aproveitar a liberdade que esta ferramenta tem de personalizar monitoramentos, criando triggers que captura o output dos logs das camadas. O monitoramento, por exemplo, pode gerar um alerta crítico replicando para algum serviço de mensageria (Telefone, Email, SMS, Slack e etc...)
+- **Prometheus + Grafana** - Criar métricas personalizadas, configurando Prometheus para coletar dados de uso e performance diretamente das APIs MinIO (Ou APIs S3) e usar o Grafana para visualizações detalhadas, oferecendo uma visão clara das atividades nas camadas Bronze, Silver, e Gold.
+
 
 
