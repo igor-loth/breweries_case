@@ -1,6 +1,6 @@
 # breweries case(Data Pipeline)
 
-## Introdução
+### Introdução
 O objetivo desse projeto é criar um pipeline consumindo dados de um API e armazenando em um ambiente Data Lake seguindo a arquitetura Medallion com três camadas:
 - **Bronze 🟤:** Dados Brutos.
 - **Silver ⚪:** Dados selecionados e particionado por localização.
@@ -34,13 +34,23 @@ Caso queira ver o Pipeline funcionando, antes de clonar o repositório, tem algu
       # Subir o ambiente
       docker-compose up -d
   ```
+## Orquestração - Mage
+Toda orquestração entre as camadas, desde o load dos dados até a visão agregada dos dados na camada Gold + a construção do gráfico está centralizada no Mage. Nele podemos visualizar a árvore dos blocos que utilizamos para o tratamento dos dados
+
+ ![GET](image/main_mage.png)
+ 
+Árvore dos blocos:
+
+![GET](image/tree_orquestracao.png)
 
 ## Extração - Bronze
-Para a extração, foi criado um script python utilizando o bloco Data Loader do Mage [extract_breweries_data.py](data/data_loaders/extract_breweries_data.py) no qual captura os dados da API e armazena na camada Bronze no MinIO. O script salva os dados em um arquivo JSON ```breweries_raw.json``` na partição ```bronze/data/breweries/```. Caso o bucket não tenha sido criado, o próprio script faz a criação. 
-![GET](image/arquitetura.png)
+Para a extração, foi criado um script python utilizando o bloco Data Loader do Mage [extract_breweries_data.py](data/data_loaders/extract_breweries_data.py) no qual captura os dados da API e armazena na camada Bronze no MinIO. O script salva os dados em um arquivo JSON ```breweries_raw.json``` na partição ```bronze/data/breweries/```. Caso o bucket não tenha sido criado, o próprio script faz a criação:
+
+![GET](image/bronze.png)
 
 ## Transformação - Silver
-Para a extração, foi criado um script python utilizando o bloco Data Loader do Mage [extract_breweries_data.py](data/data_loaders/extract_breweries_data.py) no qual captura os dados da API e armazena na camada Bronze no MinIO. O script salva os dados em um arquivo JSON ```breweries_raw.json``` na partição ```bronze/data/breweries/```. Caso o bucket não tenha sido criado, o próprio script faz a criação. 
+Para a extração, foi criado um script python utilizando o bloco Data Loader do Mage [extract_breweries_data.py](data/data_loaders/extract_breweries_data.py) no qual captura os dados da API e armazena na camada Bronze no MinIO. O script salva os dados em um arquivo JSON ```breweries_raw.json``` na partição ```bronze/data/breweries/```. Caso o bucket não tenha sido criado, o próprio script faz a criação:
+
 ![GET](image/arquitetura.png)
 
 ## Transformação - Gold
@@ -50,5 +60,11 @@ Para a extração, foi criado um script python utilizando o bloco Data Loader do
 ## Disponibilização - Data viz
 Para a extração, foi criado um script python utilizando o bloco Data Loader do Mage [extract_breweries_data.py](data/data_loaders/extract_breweries_data.py) no qual captura os dados da API e armazena na camada Bronze no MinIO. O script salva os dados em um arquivo JSON ```breweries_raw.json``` na partição ```bronze/data/breweries/```. Caso o bucket não tenha sido criado, o próprio script faz a criação. 
 ![GET](image/arquitetura.png)
+
+## Logs
+Caso ocorra algum erro no processo, os logs são armazenados também no bucket, mais precisamente na partição ```bronze/logs```. A demais camadas (Silver e Gold) também segue o mesmo padrão.
+
+## Monitoramento e Observabilidade - Próximos Passos
+Caso ocorra algum erro no processo, os logs são armazenados também no bucket, mais precisamente na partição ```bronze/logs```. A demais camadas (Silver e Gold) também segue o mesmo padrão.
 
 
